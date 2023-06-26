@@ -126,6 +126,13 @@ static const struct sdio_device_id sdio_ids[] = {
 //	{ /* end: all zeroes */				},
 };
 
+#ifdef CONFIG_RTL8723A
+MODULE_ALIAS("sdio:c*v024Cd8723*");
+#endif
+#ifdef CONFIG_RTL8188E
+MODULE_ALIAS("sdio:c*v024Cd8179*");
+#endif
+
 static int rtw_drv_init(struct sdio_func *func, const struct sdio_device_id *id);
 static void rtw_dev_remove(struct sdio_func *func);
 static int rtw_sdio_resume(struct device *dev);
