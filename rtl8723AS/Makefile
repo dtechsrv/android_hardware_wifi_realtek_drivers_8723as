@@ -262,7 +262,8 @@ _OS_INTFS_FILES :=	os_dep/osdep_service.o \
 			os_dep/linux/mlme_linux.o \
 			os_dep/linux/recv_linux.o \
 			os_dep/linux/ioctl_cfg80211.o \
-			os_dep/linux/rtw_android.o
+			os_dep/linux/rtw_android.o \
+			os_dep/linux/rtw_proc.o
 
 ifeq ($(CONFIG_SDIO_HCI), y)
 _OS_INTFS_FILES += os_dep/linux/custom_gpio_linux.o
