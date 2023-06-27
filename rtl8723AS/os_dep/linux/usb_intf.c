@@ -2059,7 +2059,7 @@ static int __init rtw_drv_entry(void)
 	dump_drv_version(RTW_DBGDUMP);
 #ifdef BTCOEXVERSION
 	DBG_871X_LEVEL(_drv_always_, DRV_NAME" BT-Coex version = %s\n", BTCOEXVERSION);
-#endif BTCOEXVERSION
+#endif // BTCOEXVERSION
 
 #ifdef CONFIG_PLATFORM_RTK_DMP
 	u32 tmp;
