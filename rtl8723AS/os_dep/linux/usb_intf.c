@@ -2051,7 +2051,7 @@ _func_exit_;
 extern int console_suspend_enabled;
 #endif
 
-static int /*__init*/ rtw_drv_entry(void)
+static int __init rtw_drv_entry(void)
 {
 	int ret = 0;
 
@@ -2059,7 +2059,7 @@ static int /*__init*/ rtw_drv_entry(void)
 	dump_drv_version(RTW_DBGDUMP);
 #ifdef BTCOEXVERSION
 	DBG_871X_LEVEL(_drv_always_, DRV_NAME" BT-Coex version = %s\n", BTCOEXVERSION);
-#endif // BTCOEXVERSION
+#endif BTCOEXVERSION
 
 #ifdef CONFIG_PLATFORM_RTK_DMP
 	u32 tmp;
@@ -2125,7 +2125,7 @@ exit:
 	return ret;
 }
 
-static void /*exit*/ rtw_drv_halt(void)
+static void __exit rtw_drv_halt(void)
 {
 	DBG_871X_LEVEL(_drv_always_, "module exit start\n");
 
@@ -2156,50 +2156,8 @@ static void /*exit*/ rtw_drv_halt(void)
 }
 
 
-#include "wifi_version.h"
-#include <linux/rfkill-wlan.h>
-extern int get_wifi_chip_type(void);
-
-int rockchip_wifi_init_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return 0;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Launching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8723AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8192_DRV_VERSION);
-    rockchip_wifi_power(1);
-
-    return rtw_drv_entry();
-}
-
-void rockchip_wifi_exit_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Dislaunching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8723AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8192_DRV_VERSION);
-    rtw_drv_halt();
-    rockchip_wifi_power(0);
-}
-
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-late_initcall(rockchip_wifi_init_module_rtkwifi);
-module_exit(rockchip_wifi_exit_module_rtkwifi);
-#else
-EXPORT_SYMBOL(rockchip_wifi_init_module_rtkwifi);
-EXPORT_SYMBOL(rockchip_wifi_exit_module_rtkwifi);
-#endif
-//module_init(rtw_drv_entry);
-//module_exit(rtw_drv_halt);
+module_init(rtw_drv_entry);
+module_exit(rtw_drv_halt);
 
 #ifdef CONFIG_INTEL_PROXIM	
 _adapter  *rtw_usb_get_sw_pointer(void)
