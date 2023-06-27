@@ -29,9 +29,9 @@
 
 //Older Android kernel doesn't has CONFIG_ANDROID defined,
 //add this to force CONFIG_ANDROID defined
-#ifdef CONFIG_PLATFORM_ANDROID
-#define CONFIG_ANDROID
-#endif
+//#ifdef CONFIG_PLATFORM_ANDROID
+//#define CONFIG_ANDROID
+//#endif
 
 #ifdef CONFIG_ANDROID
 //Some Android build will restart the UI while non-printable ascii is passed
@@ -71,6 +71,11 @@
 	#define CONFIG_USB_VENDOR_REQ_MUTEX
 #endif
 
+#define DYNAMIC_CAMID_ALLOC
+
+#ifndef CONFIG_RTW_HIQ_FILTER
+	#define CONFIG_RTW_HIQ_FILTER 1
+#endif
 
 //#include <rtl871x_byteorder.h>
 

@@ -171,6 +171,9 @@ typedef struct _RT_LINK_DETECT_T{
 	BOOLEAN			bHigherBusyTraffic; // For interrupt migration purpose.
 	BOOLEAN			bHigherBusyRxTraffic; // We may disable Tx interrupt according as Rx traffic.
 	BOOLEAN			bHigherBusyTxTraffic; // We may disable Tx interrupt according as Tx traffic.
+#ifdef CONFIG_BT_COEXIST	
+	BOOLEAN			bBusyTrafficForCoex;
+#endif
 }RT_LINK_DETECT_T, *PRT_LINK_DETECT_T;
 
 struct profile_info {
@@ -247,11 +250,11 @@ struct group_id_info{
 
 struct scan_limit_info{
 	u8					scan_op_ch_only;			//	When this flag is set, the driver should just scan the operation channel
-#ifndef P2P_OP_CHECK_SOCIAL_CH
+#ifndef CONFIG_P2P_OP_CHK_SOCIAL_CH
 	u8					operation_ch[2];				//	Store the operation channel of invitation request frame
 #else
 	u8					operation_ch[5];				//	Store additional channel 1,6,11  for Android 4.2 IOT & Nexus 4
-#endif //P2P_OP_CHECK_SOCIAL_CH
+#endif //CONFIG_P2P_OP_CHK_SOCIAL_CH
 };
 
 #ifdef CONFIG_IOCTL_CFG80211
@@ -261,6 +264,7 @@ struct cfg80211_wifidirect_info{
 	struct ieee80211_channel	remain_on_ch_channel;
 	enum nl80211_channel_type	remain_on_ch_type;
 	u64						remain_on_ch_cookie;
+	bool not_indic_ro_ch_exp;
 	bool is_ro_ch;
 };
 #endif //CONFIG_IOCTL_CFG80211
@@ -601,6 +605,9 @@ struct mlme_priv {
 #ifdef CONFIG_FTP_PROTECT
 	u8	ftp_lock_flag;
 #endif //CONFIG_FTP_PROTECT
+
+	u8 	NumOfBcnInfoChkFail;
+	u32	timeBcnInfoChkStart;
 };
 
 #ifdef CONFIG_AP_MODE
@@ -771,6 +778,8 @@ extern void rtw_disconnect_hdl_under_linked(_adapter* adapter, struct sta_info *
 extern void rtw_generate_random_ibss(u8 *pibss);
 extern struct wlan_network* rtw_find_network(_queue *scanned_queue, u8 *addr);
 extern struct wlan_network* rtw_get_oldest_wlan_network(_queue *scanned_queue);
+struct wlan_network *_rtw_find_same_network(_queue *scanned_queue, struct wlan_network *network);
+struct wlan_network *rtw_find_same_network(_queue *scanned_queue, struct wlan_network *network);
 
 extern void rtw_free_assoc_resources(_adapter* adapter, int lock_scanned_queue);
 extern void rtw_indicate_disconnect(_adapter* adapter);

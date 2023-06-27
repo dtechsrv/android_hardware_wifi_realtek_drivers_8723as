@@ -98,6 +98,23 @@ static const u32 rtw_cipher_suites[] = {
 	.max_power		= 30,				\
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+/* if wowlan is not supported, kernel generate a disconnect at each suspend
+ * cf: /net/wireless/sysfs.c, so register a stub wowlan.
+ * Moreover wowlan has to be enabled via a the nl80211_set_wowlan callback.
+ * (from user space, e.g. iw phy0 wowlan enable)
+ */
+static const struct wiphy_wowlan_support wowlan_stub = {
+	.flags = WIPHY_WOWLAN_ANY,
+	.n_patterns = 0,
+	.pattern_max_len = 0,
+	.pattern_min_len = 0,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+	.max_pkt_offset = 0,
+#endif
+};
+#endif
+
 static struct ieee80211_rate rtw_rates[] = {
 	RATETAB_ENT(10,  0x1,   0),
 	RATETAB_ENT(20,  0x2,   0),
@@ -340,6 +357,19 @@ static int rtw_ieee80211_channel_to_frequency(int chan, int band)
 	}
 }
 
+static u64 rtw_get_systime_us(void)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+	struct timespec ts;
+	get_monotonic_boottime(&ts);
+	return ((u64)ts.tv_sec*1000000) + ts.tv_nsec / 1000;
+#else
+	struct timeval tv;
+	do_gettimeofday(&tv);
+	return ((u64)tv.tv_sec*1000000) + tv.tv_usec;
+#endif
+}
+
 #define MAX_BSSINFO_LEN 1000
 struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_network *pnetwork)
 {
@@ -354,7 +384,10 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	u8 *notify_ie;
 	size_t notify_ielen;
 	s32 notify_signal;
-	u8 buf[MAX_BSSINFO_LEN], *pbuf;
+	//u8 buf[MAX_BSSINFO_LEN];
+
+	u8 *pbuf;
+	size_t buf_size = MAX_BSSINFO_LEN;
 	size_t len,bssinf_len=0;
 	struct rtw_ieee80211_hdr *pwlanhdr;
 	unsigned short *fctrl;
@@ -364,12 +397,17 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	struct wiphy *wiphy = wdev->wiphy;
 	struct mlme_priv *pmlmepriv = &(padapter->mlmepriv);
 
+	pbuf = rtw_zmalloc(buf_size);
+	if(pbuf == NULL){
+		DBG_871X("%s pbuf allocate failed  !! \n",__FUNCTION__);
+		return bss;
+	}
 
 	//DBG_8192C("%s\n", __func__);
 
 	bssinf_len = pnetwork->network.IELength+sizeof (struct rtw_ieee80211_hdr_3addr);
-	if(bssinf_len > MAX_BSSINFO_LEN){
-		DBG_871X("%s IE Length too long > %d byte \n",__FUNCTION__,MAX_BSSINFO_LEN);
+	if(bssinf_len > buf_size){
+		DBG_871X("%s IE Length too long > %zu byte \n",__FUNCTION__,buf_size);
 		goto exit;
 	}
 
@@ -455,13 +493,14 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	
 	notify_channel = ieee80211_get_channel(wiphy, freq);
 
-	//rtw_get_timestampe_from_ie()
-	notify_timestamp = jiffies_to_msecs(jiffies)*1000; /* uSec */
+	if (0)
+		notify_timestamp = le64_to_cpu(*(u64*)rtw_get_timestampe_from_ie(pnetwork->network.IEs));
+	else
+		notify_timestamp = rtw_get_systime_us();
 
 	notify_interval = le16_to_cpu(*(u16*)rtw_get_beacon_interval_from_ie(pnetwork->network.IEs));
 	notify_capability = le16_to_cpu(*(u16*)rtw_get_capability_from_ie(pnetwork->network.IEs));		
 
-	
 	notify_ie = pnetwork->network.IEs+_FIXED_IE_LENGTH_;
 	notify_ielen = pnetwork->network.IELength-_FIXED_IE_LENGTH_;
 
@@ -479,10 +518,10 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	DBG_8192C("Capability: %X\n", notify_capability);
 	DBG_8192C("Beacon interval: %d\n", notify_interval);
 	DBG_8192C("Signal: %d\n", notify_signal);
-	DBG_8192C("notify_timestamp: %#018llx\n", notify_timestamp);
+	DBG_8192C("notify_timestamp: %llu\n", notify_timestamp);
 	#endif
 
-	pbuf = buf;
+	//pbuf = buf;
 	
 	pwlanhdr = (struct rtw_ieee80211_hdr *)pbuf;	
 	fctrl = &(pwlanhdr->frame_ctl);
@@ -503,10 +542,11 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	_rtw_memcpy(pwlanhdr->addr3, pnetwork->network.MacAddress, ETH_ALEN);
 
 
-	pbuf += sizeof(struct rtw_ieee80211_hdr_3addr);	
+	//pbuf += sizeof(struct rtw_ieee80211_hdr_3addr);
 	len = sizeof (struct rtw_ieee80211_hdr_3addr);
+	_rtw_memcpy((pbuf+len), pnetwork->network.IEs, pnetwork->network.IELength);
+	*((u64*)(pbuf+len)) = cpu_to_le64(notify_timestamp);
 
-	_rtw_memcpy(pbuf, pnetwork->network.IEs, pnetwork->network.IELength);
 	len += pnetwork->network.IELength;
 
 	//#ifdef CONFIG_P2P
@@ -515,10 +555,9 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	//	DBG_8192C("%s, got p2p_ie\n", __func__);
 	//}
 	//#endif
-	
 
 #if 1	
-	bss = cfg80211_inform_bss_frame(wiphy, notify_channel, (struct ieee80211_mgmt *)buf,
+	bss = cfg80211_inform_bss_frame(wiphy, notify_channel, (struct ieee80211_mgmt *)pbuf,
 		len, notify_signal, GFP_ATOMIC);
 #else			 
 			
@@ -570,7 +609,11 @@ struct cfg80211_bss *rtw_cfg80211_inform_bss(_adapter *padapter, struct wlan_net
 	cfg80211_put_bss(bss);
 #endif
 
-exit:	
+exit:
+
+	if(pbuf)
+		rtw_mfree(pbuf, buf_size);
+
 	return bss;
 	
 }
@@ -601,6 +644,12 @@ int rtw_cfg80211_check_bss(_adapter *padapter)
 			pnetwork->MacAddress, pnetwork->Ssid.Ssid,
 			pnetwork->Ssid.SsidLength,
 			WLAN_CAPABILITY_ESS, WLAN_CAPABILITY_ESS);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)
+	cfg80211_put_bss(padapter->rtw_wdev->wiphy, bss);
+#else
+	cfg80211_put_bss(bss);
+#endif
 
 	return 	(bss!=NULL);
 }
@@ -809,7 +858,6 @@ void rtw_cfg80211_indicate_disconnect(_adapter *padapter)
 #endif //CONFIG_P2P
 
 	if (!padapter->mlmepriv.not_indic_disco) {
-		#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0) || defined(COMPAT_KERNEL_RELEASE)
 		DBG_8192C("pwdev->sme_state(b)=%d\n", pwdev->sme_state);
 
 		if(pwdev->sme_state==CFG80211_SME_CONNECTING)
@@ -821,14 +869,6 @@ void rtw_cfg80211_indicate_disconnect(_adapter *padapter)
 			//DBG_8192C("pwdev->sme_state=%d\n", pwdev->sme_state);
 
 		DBG_8192C("pwdev->sme_state(a)=%d\n", pwdev->sme_state);
-		#else
-
-		if(check_fwstate(&padapter->mlmepriv, _FW_LINKED))
-			cfg80211_disconnected(padapter->pnetdev, 0, NULL, 0, GFP_ATOMIC);
-		else
-			cfg80211_connect_result(padapter->pnetdev, NULL, NULL, 0, NULL, 0,
-				WLAN_STATUS_UNSPECIFIED_FAILURE, GFP_ATOMIC/*GFP_KERNEL*/);
-		#endif
 	}
 }
  	
@@ -1385,7 +1425,7 @@ _func_enter_;
 					//DEBUG_ERR((" param->u.crypt.key_len=%d\n",param->u.crypt.key_len));
 					DBG_871X(" ~~~~set sta key:unicastkey\n");
 					
-					rtw_setstakey_cmd(padapter, (unsigned char *)psta, _TRUE, _TRUE);
+					rtw_setstakey_cmd(padapter, psta, _TRUE, _TRUE);
 				}
 				else//group key
 				{
@@ -1399,14 +1439,7 @@ _func_enter_;
 						DBG_871X(" ~~~~set sta key:groupkey\n");
 	
 						padapter->securitypriv.dot118021XGrpKeyid = param->u.crypt.idx;
-#ifdef CONFIG_CONCURRENT_MODE 
-						if (padapter->adapter_type == PRIMARY_ADAPTER)
-							rtw_set_key(padapter,&padapter->securitypriv,param->u.crypt.idx, 1,_TRUE);
-						else
-							DBG_871X_LEVEL(_drv_always_, "second interface do not set cam.\n");
-#else
 						rtw_set_key(padapter,&padapter->securitypriv,param->u.crypt.idx, 1,_TRUE);
-#endif
 					}
 #ifdef CONFIG_IEEE80211W
 					else if(strcmp(param->u.crypt.alg, "BIP") == 0)
@@ -2348,18 +2381,15 @@ if (padapter->registrypriv.mp_mode == 1)
 
 
 #ifdef CONFIG_P2P
-	if( pwdinfo->driver_interface == DRIVER_CFG80211 )
+	if(!rtw_p2p_chk_state(pwdinfo, P2P_STATE_NONE) && !rtw_p2p_chk_state(pwdinfo, P2P_STATE_IDLE))
 	{
-		if(!rtw_p2p_chk_state(pwdinfo, P2P_STATE_NONE) && !rtw_p2p_chk_state(pwdinfo, P2P_STATE_IDLE))
-		{
-			rtw_p2p_set_state(pwdinfo, P2P_STATE_FIND_PHASE_SEARCH);
-			rtw_free_network_queue(padapter, _TRUE);
+		rtw_p2p_set_state(pwdinfo, P2P_STATE_FIND_PHASE_SEARCH);
+		rtw_free_network_queue(padapter, _TRUE);
 
-			if(social_channel == 0)
-				rtw_p2p_findphase_ex_set(pwdinfo, P2P_FINDPHASE_EX_NONE);
-			else
-				rtw_p2p_findphase_ex_set(pwdinfo, P2P_FINDPHASE_EX_SOCIAL_LAST);
-		}
+		if(social_channel == 0)
+			rtw_p2p_findphase_ex_set(pwdinfo, P2P_FINDPHASE_EX_NONE);
+		else
+			rtw_p2p_findphase_ex_set(pwdinfo, P2P_FINDPHASE_EX_SOCIAL_LAST);
 	}
 #endif //CONFIG_P2P
 
@@ -2475,6 +2505,13 @@ static int rtw_cfg80211_set_wpa_version(struct security_priv *psecuritypriv, u32
 		psecuritypriv->ndisauthtype = Ndis802_11AuthModeWPA2PSK;
 	}
 */
+#ifdef CONFIG_WAPI_SUPPORT
+	if (wpa_version & NL80211_WAPI_VERSION_1)
+	{
+		psecuritypriv->ndisauthtype = Ndis802_11AuthModeWAPI;
+        }
+#endif
+
 
 	return 0;
 
@@ -2976,7 +3013,7 @@ static int cfg80211_rtw_connect(struct wiphy *wiphy, struct net_device *ndev,
 		goto exit;
 	}
 
-#ifdef CONFIG_PLATFORM_MSTAR
+#ifdef CONFIG_PLATFORM_MSTAR_SCAN_BEFORE_CONNECT
 	printk("MStar Android!\n");
 	if((wdev_to_priv(padapter->rtw_wdev))->bandroid_scan == _FALSE)
 	{
@@ -3309,13 +3346,20 @@ static int cfg80211_rtw_set_pmksa(struct wiphy *wiphy,
 {
 	u8	index,blInserted = _FALSE;
 	_adapter	*padapter = wiphy_to_adapter(wiphy);
+	struct mlme_priv *mlme = &padapter->mlmepriv;
 	struct security_priv	*psecuritypriv = &padapter->securitypriv;
 	u8	strZeroMacAddress[ ETH_ALEN ] = { 0x00 };
 
-	DBG_871X(FUNC_NDEV_FMT"\n", FUNC_NDEV_ARG(netdev));
+	DBG_871X(FUNC_NDEV_FMT" "MAC_FMT" "KEY_FMT"\n", FUNC_NDEV_ARG(netdev)
+		, MAC_ARG(pmksa->bssid), KEY_ARG(pmksa->pmkid));
 
 	if ( _rtw_memcmp( pmksa->bssid, strZeroMacAddress, ETH_ALEN ) == _TRUE )
 	{
+		return -EINVAL;
+	}
+
+	if (check_fwstate(mlme, _FW_LINKED) == _FALSE) {
+		DBG_871X(FUNC_NDEV_FMT" not set pmksa cause not in linked state\n", FUNC_NDEV_ARG(netdev));
 		return -EINVAL;
 	}
 
@@ -3364,7 +3408,8 @@ static int cfg80211_rtw_del_pmksa(struct wiphy *wiphy,
 	_adapter	*padapter = wiphy_to_adapter(wiphy);
 	struct security_priv	*psecuritypriv = &padapter->securitypriv;
 
-	DBG_871X(FUNC_NDEV_FMT"\n", FUNC_NDEV_ARG(netdev));
+	DBG_871X(FUNC_NDEV_FMT" "MAC_FMT" "KEY_FMT"\n", FUNC_NDEV_ARG(netdev)
+		, MAC_ARG(pmksa->bssid), KEY_ARG(pmksa->pmkid));
 
 	for(index=0 ; index<NUM_PMKID_CACHE; index++)
 	{
@@ -3374,6 +3419,7 @@ static int cfg80211_rtw_del_pmksa(struct wiphy *wiphy,
 			_rtw_memset( psecuritypriv->PMKIDList[index].PMKID, 0x00, WLAN_PMKID_LEN );
 			psecuritypriv->PMKIDList[index].bUsed = _FALSE;
 			bMatched = _TRUE;
+			DBG_871X(FUNC_NDEV_FMT" clear id:%hhu\n", FUNC_NDEV_ARG(netdev), index);		
 			break;
 		}	
 	}
@@ -4613,15 +4659,14 @@ static s32 cfg80211_rtw_remain_on_channel(struct wiphy *wiphy,
 
 	if(pcfg80211_wdinfo->is_ro_ch == _TRUE)
 	{
+		pcfg80211_wdinfo->not_indic_ro_ch_exp = _TRUE;
 		DBG_8192C("%s, cancel ro ch timer\n", __func__);
-		
 		_cancel_timer_ex(&padapter->cfg80211_wdinfo.remain_on_ch_timer);
-
-#ifdef CONFIG_CONCURRENT_MODE
-                ATOMIC_SET(&pwdev_priv->ro_ch_to, 1);			
-#endif //CONFIG_CONCURRENT_MODE	
-
+		#ifdef CONFIG_CONCURRENT_MODE
+		ATOMIC_SET(&pwdev_priv->ro_ch_to, 1);
+		#endif //CONFIG_CONCURRENT_MODE
 		p2p_protocol_wk_hdl(padapter, P2P_RO_CH_WK);
+		pcfg80211_wdinfo->not_indic_ro_ch_exp = _FALSE;
 	}
 
 	pcfg80211_wdinfo->is_ro_ch = _TRUE;
@@ -4766,12 +4811,14 @@ static s32 cfg80211_rtw_cancel_remain_on_channel(struct wiphy *wiphy,
 	DBG_871X(FUNC_ADPT_FMT"\n", FUNC_ADPT_ARG(padapter));
 
 	if (pcfg80211_wdinfo->is_ro_ch == _TRUE) {
+		pcfg80211_wdinfo->not_indic_ro_ch_exp = _TRUE;
 		DBG_8192C("%s, cancel ro ch timer\n", __func__);
 		_cancel_timer_ex(&padapter->cfg80211_wdinfo.remain_on_ch_timer);
 		#ifdef CONFIG_CONCURRENT_MODE
 		ATOMIC_SET(&pwdev_priv->ro_ch_to, 1);
 		#endif
 		p2p_protocol_wk_hdl(padapter, P2P_RO_CH_WK);
+		pcfg80211_wdinfo->not_indic_ro_ch_exp = _FALSE;
 	}
 
 	#if 0
@@ -4964,7 +5011,6 @@ static int cfg80211_rtw_mgmt_tx(struct wiphy *wiphy,
 #else
 	struct net_device *ndev,
 #endif
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)) || defined(COMPAT_KERNEL_RELEASE)
 	struct ieee80211_channel *chan,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)) || defined(COMPAT_KERNEL_RELEASE)
 	bool offchan,
@@ -4984,23 +5030,11 @@ static int cfg80211_rtw_mgmt_tx(struct wiphy *wiphy,
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
 	bool dont_wait_for_ack,
-	#endif
-#else
-	struct cfg80211_mgmt_tx_params *params,
 #endif
 	u64 *cookie)
 {
 	_adapter *padapter = (_adapter *)wiphy_to_adapter(wiphy);
 	struct rtw_wdev_priv *pwdev_priv = wdev_to_priv(padapter->rtw_wdev);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)) || defined(COMPAT_KERNEL_RELEASE)
-	struct ieee80211_channel *chan = params->chan;
-	bool offchan = params->offchan;
-	unsigned int wait = params->wait;
-	const u8 *buf = params->buf;
-	size_t len = params->len;
-	bool no_cck = params->no_cck;
-	bool dont_wait_for_ack = params->dont_wait_for_ack;
-#endif
 	int ret = 0;
 	int tx_ret;
 	u32 dump_limit = RTW_MAX_MGMT_TX_CNT;
@@ -5693,6 +5727,10 @@ static void rtw_cfg80211_preinit_wiphy(_adapter *padapter, struct wiphy *wiphy)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
 	wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
 	wiphy->flags |= WIPHY_FLAG_OFFCHAN_TX | WIPHY_FLAG_HAVE_AP_SME;
+#endif
+
+#if defined(CONFIG_PM) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
+	wiphy->wowlan = wowlan_stub;
 #endif
 
 	if(padapter->registrypriv.power_mgnt != PS_MODE_ACTIVE)

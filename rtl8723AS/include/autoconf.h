@@ -78,17 +78,18 @@
 
 	#define CONFIG_P2P_PS
 	//#define CONFIG_P2P_IPS
-	#define P2P_OP_CHECK_SOCIAL_CH
+	#define CONFIG_P2P_OP_CHK_SOCIAL_CH
+	#define CONFIG_CFG80211_ONECHANNEL_UNDER_CONCURRENT
 #endif
 
 //	Added by Kurt 20110511
 //#define CONFIG_TDLS
 #ifdef CONFIG_TDLS
 //	#ifndef CONFIG_WFD
-//		#define CONFIG_WFD	
+//		#define CONFIG_WFD
 //	#endif
-//	#define CONFIG_TDLS_AUTOSETUP			
-//	#define CONFIG_TDLS_AUTOCHECKALIVE		
+//	#define CONFIG_TDLS_AUTOSETUP
+//	#define CONFIG_TDLS_AUTOCHECKALIVE
 #endif
 
 #define CONFIG_LAYER2_ROAMING
@@ -147,7 +148,7 @@
 #ifdef CONFIG_CONCURRENT_MODE
 	#define CONFIG_TSF_RESET_OFFLOAD 			// For 2 PORT TSF SYNC.
 	//#define CONFIG_HWPORT_SWAP				//Port0->Sec , Port1 -> Pri
-	//#define CONFIG_STA_MODE_SCAN_UNDER_AP_MODE
+	#define CONFIG_STA_MODE_SCAN_UNDER_AP_MODE                          
 #endif	// CONFIG_CONCURRENT_MODE
 
 

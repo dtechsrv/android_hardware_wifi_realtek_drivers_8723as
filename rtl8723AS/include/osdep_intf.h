@@ -114,13 +114,10 @@ struct net_device *rtw_init_netdev(_adapter *padapter);
 u16 rtw_recv_select_queue(struct sk_buff *skb);
 #endif //LINUX_VERSION_CODE>=KERNEL_VERSION(2,6,35)
 
-#ifdef CONFIG_PROC_DEBUG
-void rtw_proc_init_one(struct net_device *dev);
-void rtw_proc_remove_one(struct net_device *dev);
-#else //!CONFIG_PROC_DEBUG
-static void rtw_proc_init_one(struct net_device *dev){}
-static void rtw_proc_remove_one(struct net_device *dev){}
-#endif //!CONFIG_PROC_DEBUG
+int rtw_ndev_notifier_register(void);
+void rtw_ndev_notifier_unregister(void);
+
+#include "../os_dep/linux/rtw_proc.h"
 #endif //PLATFORM_LINUX
 
 
@@ -129,10 +126,6 @@ extern int rtw_ioctl(struct ifnet * ifp, u_long cmd, caddr_t data);
 #endif
 
 void rtw_ips_dev_unload(_adapter *padapter);
-
-#ifdef CONFIG_RF_GAIN_OFFSET
-void rtw_bb_rf_gain_offset(_adapter *padapter);
-#endif //CONFIG_RF_GAIN_OFFSET
 
 #ifdef CONFIG_IPS
 int rtw_ips_pwr_up(_adapter *padapter);

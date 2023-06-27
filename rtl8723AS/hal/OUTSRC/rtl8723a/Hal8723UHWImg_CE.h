@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __INC_HAL8723U_FW_IMG_H
 #define __INC_HAL8723U_FW_IMG_H
 
@@ -9,7 +10,7 @@ extern u8 Rtl8723UFwImgArray[Rtl8723UImgArrayLength];
 #define Rtl8723UBTImgArrayLength 1
 extern u8 Rtl8723UFwBTImgArray[Rtl8723UBTImgArrayLength];
 
-#define Rtl8723UUMCBCutImgArrayWithBTLength 24348
+#define Rtl8723UUMCBCutImgArrayWithBTLength 24124
 #define Rtl8723UUMCBCutImgArrayWithoutBTLength 19200
 
 extern u8 Rtl8723UFwUMCBCutImgArrayWithBT[Rtl8723UUMCBCutImgArrayWithBTLength];

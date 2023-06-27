@@ -619,7 +619,6 @@ int rtw_is_same_ibss(_adapter *adapter, struct wlan_network *pnetwork)
 	
 }
 
-inline int is_same_ess(WLAN_BSSID_EX *a, WLAN_BSSID_EX *b);
 inline int is_same_ess(WLAN_BSSID_EX *a, WLAN_BSSID_EX *b)
 {
 	//RT_TRACE(_module_rtl871x_mlme_c_,_drv_err_,("(%s,%d)(%s,%d)\n",
@@ -675,6 +674,45 @@ _func_exit_;
 			((s_cap & WLAN_CAPABILITY_BSS) == 
 			(d_cap & WLAN_CAPABILITY_BSS)));
 	
+}
+
+struct wlan_network *_rtw_find_same_network(_queue *scanned_queue, struct wlan_network *network)
+{
+	_list *phead, *plist;
+	struct wlan_network *found = NULL;
+
+	phead = get_list_head(scanned_queue);
+	plist = get_next(phead);
+
+	while (plist != phead) {
+		found = LIST_CONTAINOR(plist, struct wlan_network ,list);
+
+		if (is_same_network(&network->network, &found->network, 0))
+			break;
+
+		plist = get_next(plist);
+	}
+
+	if(plist == phead)
+		found = NULL;
+exit:		
+	return found;
+}
+
+struct wlan_network *rtw_find_same_network(_queue *scanned_queue, struct wlan_network *network)
+{
+	_irqL irqL;
+	struct wlan_network *found = NULL;
+
+	if (scanned_queue == NULL || network == NULL)
+		goto exit;	
+
+	_enter_critical_bh(&scanned_queue->lock, &irqL);
+	found = _rtw_find_same_network(scanned_queue, network);
+	_exit_critical_bh(&scanned_queue->lock, &irqL);
+
+exit:
+	return found;
 }
 
 struct	wlan_network	* rtw_get_oldest_wlan_network(_queue *scanned_queue)
@@ -1584,6 +1622,8 @@ void rtw_indicate_disconnect( _adapter *padapter )
 	WLAN_BSSID_EX	*cur_network = &(pmlmeinfo->network);
 	struct sta_info *psta;
 	struct sta_priv *pstapriv = &padapter->stapriv;
+	u8 *wps_ie=NULL;
+	uint wpsie_len=0;
 
 _func_enter_;	
 	
@@ -1591,7 +1631,22 @@ _func_enter_;
 
 	_clr_fwstate_(pmlmepriv, _FW_UNDER_LINKING|WIFI_UNDER_WPS);
 
-        //DBG_871X("clear wps when %s\n", __func__);
+	// force to clear cur_network_scanned's SELECTED REGISTRAR
+	if (pmlmepriv->cur_network_scanned) {
+		WLAN_BSSID_EX	*current_joined_bss = &(pmlmepriv->cur_network_scanned->network);
+		if (current_joined_bss) {
+			wps_ie=rtw_get_wps_ie(current_joined_bss->IEs +_FIXED_IE_LENGTH_,
+				current_joined_bss->IELength-_FIXED_IE_LENGTH_, NULL, &wpsie_len);
+			if (wps_ie && wpsie_len>0) {
+				u8 *attr = NULL;
+				u32 attr_len;
+				attr=rtw_get_wps_attr(wps_ie, wpsie_len, WPS_ATTR_SELECTED_REGISTRAR,
+							   NULL, &attr_len);
+				if (attr)
+					*(attr + 4) = 0;
+			}
+		}
+	}
 
 	if(rtw_to_roaming(padapter) > 0)
 		_clr_fwstate_(pmlmepriv, _FW_LINKED);
@@ -1691,6 +1746,8 @@ static struct sta_info *rtw_joinbss_update_stainfo(_adapter *padapter, struct wl
 		DBG_871X("%s\n", __FUNCTION__);
 	
 		psta->aid  = pnetwork->join_res;
+
+#if 0 //alloc macid when call rtw_alloc_stainfo(), and release macid when call rtw_free_stainfo()
 #ifdef CONFIG_CONCURRENT_MODE	
 
 			if(PRIMARY_ADAPTER == padapter->adapter_type)
@@ -1700,7 +1757,7 @@ static struct sta_info *rtw_joinbss_update_stainfo(_adapter *padapter, struct wl
 #else
 			psta->mac_id=0;
 #endif		
-
+#endif //removed
 		//sta mode
 		rtw_hal_set_odm_var(padapter,HAL_ODM_STA_INFO,psta,_TRUE);
 
@@ -1720,6 +1777,7 @@ static struct sta_info *rtw_joinbss_update_stainfo(_adapter *padapter, struct wl
 			_rtw_memset((u8 *)&psta->dot11tkiptxmickey, 0, sizeof (union Keytype));
 						
 			_rtw_memset((u8 *)&psta->dot11txpn, 0, sizeof (union pn48));
+			psta->dot11txpn.val = psta->dot11txpn.val + 1;
 #ifdef CONFIG_IEEE80211W
 			_rtw_memset((u8 *)&psta->dot11wtxpn, 0, sizeof (union pn48));
 #endif //CONFIG_IEEE80211W
@@ -1959,7 +2017,7 @@ _func_enter_;
 			}
 			else
 			{
-				ptarget_wlan = rtw_find_network(&pmlmepriv->scanned_queue, pnetwork->network.MacAddress);
+				ptarget_wlan = _rtw_find_same_network(&pmlmepriv->scanned_queue, pnetwork);
 				if(check_fwstate(pmlmepriv, WIFI_STATION_STATE) == _TRUE){
 					if(ptarget_wlan)	ptarget_wlan->fixed = _TRUE;			
 				}
@@ -1972,7 +2030,7 @@ _func_enter_;
 			}
 			else
 			{			
-				RT_TRACE(_module_rtl871x_mlme_c_,_drv_err_,("Can't find ptarget_wlan when joinbss_event callback\n"));
+				DBG_871X_LEVEL(_drv_always_, "Can't find ptarget_wlan when joinbss_event callback\n");
 				_exit_critical_bh(&(pmlmepriv->scanned_queue.lock), &irqL);
 				goto ignore_joinbss_callback;
 			}
@@ -2096,6 +2154,7 @@ _func_enter_;
 _func_exit_;
 }
 
+#if 0
 u8 search_max_mac_id(_adapter *padapter)
 {
 	u8 mac_id, aid;
@@ -2137,6 +2196,7 @@ u8 search_max_mac_id(_adapter *padapter)
 	return mac_id;
 
 }		
+#endif
 
 //FOR STA, AP ,AD-HOC mode
 void rtw_sta_media_status_rpt(_adapter *adapter,struct sta_info *psta, u32 mstatus)
@@ -2147,7 +2207,7 @@ void rtw_sta_media_status_rpt(_adapter *adapter,struct sta_info *psta, u32 mstat
 
 	#if (RATE_ADAPTIVE_SUPPORT==1)	//for 88E RA	
 	{
-		u8 macid = search_max_mac_id(adapter);				
+		u8 macid = rtw_search_max_mac_id(adapter);//search_max_mac_id(adapter);				
 		rtw_hal_set_hwreg(adapter,HW_VAR_TX_RPT_MAX_MACID, (u8*)&macid);
 	}
 	#endif
@@ -2275,7 +2335,7 @@ _func_enter_;
 	
 #ifdef CONFIG_RTL8711
 	//submit SetStaKey_cmd to tell fw, fw will allocate an CAM entry for this sta	
-	rtw_setstakey_cmd(adapter, (unsigned char*)psta, _FALSE, _TRUE);
+	rtw_setstakey_cmd(adapter, psta, _FALSE, _TRUE);
 #endif
 		
 exit:
@@ -3427,25 +3487,71 @@ static int SecIsInPMKIDList(_adapter *Adapter, u8 *bssid)
 // 13th element in the array is the IE length  
 //
 
-static int rtw_append_pmkid(_adapter *Adapter,int iEntry, u8 *ie, uint ie_len)
+static int rtw_append_pmkid(_adapter *adapter,int iEntry, u8 *ie, uint ie_len)
 {
-	struct security_priv *psecuritypriv=&Adapter->securitypriv;
+	struct security_priv *sec=&adapter->securitypriv;
 
-	if(ie[13]<=20){	
-		// The RSN IE didn't include the PMK ID, append the PMK information 
-			ie[ie_len]=1;
-			ie_len++;
-			ie[ie_len]=0;	//PMKID count = 0x0100
-			ie_len++;
-			_rtw_memcpy(	&ie[ie_len], &psecuritypriv->PMKIDList[iEntry].PMKID, 16);
-		
-			ie_len+=16;
-			ie[13]+=18;//PMKID length = 2+16
+	if (ie[13] > 20) {
+		int i;
+		u16 pmkid_cnt = RTW_GET_LE16(ie+14+20);
+		if (pmkid_cnt == 1 && _rtw_memcmp(ie+14+20+2, &sec->PMKIDList[iEntry].PMKID, 16)) {
+			DBG_871X(FUNC_ADPT_FMT" has carried the same PMKID:"KEY_FMT"\n"
+				, FUNC_ADPT_ARG(adapter), KEY_ARG(&sec->PMKIDList[iEntry].PMKID));
+			goto exit;
+		}
 
+		DBG_871X(FUNC_ADPT_FMT" remove original PMKID, count:%u\n"
+			, FUNC_ADPT_ARG(adapter), pmkid_cnt);
+
+		for (i=0;i<pmkid_cnt;i++)
+			DBG_871X("    "KEY_FMT"\n", KEY_ARG(ie+14+20+2+i*16));
+
+		ie_len -= 2+pmkid_cnt*16;
+		ie[13] = 20;
 	}
+
+	if (ie[13] <= 20) {	
+		/* The RSN IE didn't include the PMK ID, append the PMK information */
+
+		DBG_871X(FUNC_ADPT_FMT" append PMKID:"KEY_FMT"\n"
+				, FUNC_ADPT_ARG(adapter), KEY_ARG(&sec->PMKIDList[iEntry].PMKID));
+
+		RTW_PUT_LE16(&ie[ie_len], 1);
+		ie_len += 2;
+
+		_rtw_memcpy(&ie[ie_len], &sec->PMKIDList[iEntry].PMKID, 16);
+		ie_len += 16;
+
+		ie[13] += 18;//PMKID length = 2+16
+	}
+
+exit:
 	return (ie_len);
 	
 }
+
+static int rtw_remove_pmkid(_adapter *adapter, u8 *ie, uint ie_len)
+{
+	struct security_priv *sec=&adapter->securitypriv;
+	int i;
+	u16 pmkid_cnt = RTW_GET_LE16(ie+14+20);
+
+	if (ie[13] <= 20)
+		goto exit;
+
+	DBG_871X(FUNC_ADPT_FMT" remove original PMKID, count:%u\n"
+		, FUNC_ADPT_ARG(adapter), pmkid_cnt);
+
+	for (i=0;i<pmkid_cnt;i++)
+		DBG_871X("    "KEY_FMT"\n", KEY_ARG(ie+14+20+2+i*16));
+
+	ie_len -= 2+pmkid_cnt*16;
+	ie[13] = 20;
+
+exit:
+	return (ie_len);
+}
+
 sint rtw_restruct_sec_ie(_adapter *adapter,u8 *in_ie, u8 *out_ie, uint in_len)
 {
 	u8 authmode, securitytype, match;
@@ -3502,14 +3608,13 @@ _func_enter_;
 	iEntry = SecIsInPMKIDList(adapter, pmlmepriv->assoc_bssid);
 	if(iEntry<0)
 	{
-		return ielength;
+		if(authmode == _WPA2_IE_ID_)
+			ielength = rtw_remove_pmkid(adapter, out_ie, ielength);
 	}
 	else
 	{
 		if(authmode == _WPA2_IE_ID_)
-		{
 			ielength=rtw_append_pmkid(adapter, iEntry, out_ie, ielength);
-		}
 	}
 
 _func_exit_;

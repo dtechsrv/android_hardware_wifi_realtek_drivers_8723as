@@ -38,7 +38,6 @@
 #include "rtw_efuse.h"
 
 #include "../hal/OUTSRC/odm_precomp.h"
-#include "../hal/OUTSRC/rtl8723a/Hal8723UHWImg_CE.h"
 
 #if defined(CONFIG_SDIO_HCI) || defined(CONFIG_GSPI_HCI)
 
@@ -819,6 +818,7 @@ void Hal_InitChannelPlan(PADAPTER padapter);
 void rtl8723a_set_hal_ops(struct hal_ops *pHalFunc);
 void SetHwReg8723A(PADAPTER padapter, u8 variable, u8 *val);
 void GetHwReg8723A(PADAPTER padapter, u8 variable, u8 *val);
+u8 GetHalDefVar8723A(PADAPTER Adapter, HAL_DEF_VARIABLE eVariable, PVOID pValue);
 #ifdef CONFIG_BT_COEXIST
 void rtl8723a_SingleDualAntennaDetection(PADAPTER padapter);
 #endif
